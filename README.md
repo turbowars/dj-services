@@ -40,8 +40,7 @@ pip install -r requirements.txt
 ## Run the service
 
 ```bash
-source .venv/bin/activate
-python -m uvicorn browser_service.app:app --host 0.0.0.0 --port 8079
+.venv/bin/python -m uvicorn browser_service.app:app --host 0.0.0.0 --port 8079
 ```
 
 When the service starts, it:

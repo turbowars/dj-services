@@ -80,6 +80,8 @@ def _launch_detached_chrome(port: int, profile_dir: Path) -> None:
         "--no-default-browser-check",
         "--disable-session-crashed-bubble",
         "--disable-features=InfiniteSessionRestore",
+        "--window-position=0,0",
+        "--window-size=1280,900",
     ]
     log.info("launching Chrome: port=%d profile=%s", port, profile_dir)
     subprocess.Popen(
@@ -204,6 +206,11 @@ class DebugDriver:
 
     def get(self, url: str) -> None:
         self.raw.get(url)
+        # Bring the window to focus so it's the visible tab.
+        try:
+            self.raw.execute_script("window.focus();")
+        except WebDriverException:
+            pass
         # Element handles become stale after top-level navigation.
         self.clear_elements()
         self.frames.invalidate()
@@ -238,20 +245,26 @@ class DebugDriver:
         except WebDriverException:
             log.info("[%02d] %s", self._step, desc)
 
-    def capture_debug_snapshot(self, label: str) -> Path:
+    def capture_debug_snapshot(self, label: str) -> tuple[Path, bool]:
         # Pair screenshot + DOM snapshot to speed up post-failure diagnosis.
+        # Returns (base_path, png_ok) so callers know if PNG was actually written.
         stamp = datetime.now().strftime("%H%M%S")
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:80]
         base = DEBUG_DIR / f"{stamp}_{safe}"
+        png_ok = False
         try:
-            self.raw.save_screenshot(str(base.with_suffix(".png")))
-        except WebDriverException as exc:
+            # Use CDP directly — more reliable than save_screenshot when Chrome is backgrounded.
+            import base64
+            result = self.raw.execute_cdp_cmd("Page.captureScreenshot", {"format": "png"})
+            base.with_suffix(".png").write_bytes(base64.b64decode(result["data"]))
+            png_ok = True
+        except Exception as exc:
             log.warning("screenshot failed: %s", exc)
         try:
             base.with_suffix(".html").write_text(self.raw.page_source, encoding="utf-8")
         except WebDriverException as exc:
             log.warning("page_source failed: %s", exc)
-        return base
+        return base, png_ok
 
     def log_elements(self, css: str) -> None:
         els = self.raw.find_elements("css selector", css)

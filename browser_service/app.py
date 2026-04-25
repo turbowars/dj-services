@@ -349,6 +349,8 @@ class NavigateRequest(BaseModel):
 @app.post("/navigate")
 def navigate(req: NavigateRequest) -> dict[str, Any]:
     d = _driver()
+    # Switch to the window Selenium controls so it becomes the active/visible tab.
+    d.raw.switch_to.window(d.raw.current_window_handle)
     d.get(req.url)
     # Structured step log improves traceability when reviewing debug snapshots.
     d.log_step(f"navigate {req.url}")
@@ -360,7 +362,11 @@ class ScreenshotRequest(BaseModel):
 
 
 @app.post("/screenshot")
-def screenshot(req: ScreenshotRequest) -> dict[str, str]:
+def screenshot(req: ScreenshotRequest) -> dict[str, Any]:
     d = _driver()
-    base = d.capture_debug_snapshot(req.label)
-    return {"png": str(base.with_suffix(".png")), "html": str(base.with_suffix(".html"))}
+    base, png_ok = d.capture_debug_snapshot(req.label)
+    return {
+        "png": str(base.with_suffix(".png")) if png_ok else None,
+        "png_ok": png_ok,
+        "html": str(base.with_suffix(".html")),
+    }
