@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from selenium import webdriver
 from selenium.common.exceptions import (
     JavascriptException,
     NoSuchFrameException,
+    StaleElementReferenceException,
     WebDriverException,
 )
 from selenium.webdriver.chrome.options import Options
@@ -193,6 +195,7 @@ class DebugDriver:
         self.raw = raw
         self.mode = mode
         self._step = 0
+        self._elements: dict[str, WebElement] = {}
         self.frames = FrameTracker(self)
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -201,7 +204,32 @@ class DebugDriver:
 
     def get(self, url: str) -> None:
         self.raw.get(url)
+        # Element handles become stale after top-level navigation.
+        self.clear_elements()
         self.frames.invalidate()
+
+    def register_element(self, el: WebElement) -> str:
+        handle = uuid.uuid4().hex
+        self._elements[handle] = el
+        return handle
+
+    def get_element(self, handle: str) -> WebElement | None:
+        el = self._elements.get(handle)
+        if el is None:
+            return None
+        try:
+            # Accessing tag_name forces a staleness check in Selenium.
+            _ = el.tag_name
+            return el
+        except StaleElementReferenceException:
+            self._elements.pop(handle, None)
+            return None
+
+    def release_element(self, handle: str) -> None:
+        self._elements.pop(handle, None)
+
+    def clear_elements(self) -> None:
+        self._elements.clear()
 
     def log_step(self, desc: str) -> None:
         self._step += 1
